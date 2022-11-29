@@ -364,3 +364,79 @@ def affine_transform_torch(pts, t):
     pts_homo = torch.cat([pts, torch.ones(npts, 1, device=pts.device)], dim=1)
     out = torch.mm(t, torch.t(pts_homo))
     return torch.t(out[:2, :])
+
+
+def vehicle_points_filter(strategy, joints_3d, joints_3d_visible, pixel_thr=5):
+    """Filter confusable points in vehicle 18points schema.
+
+    filter for confusable points, for example:
+        > front_lpr_left (label: 1) vs. rear_lpr_right (label: 18)
+        > front_lpr_right (label: 9) vs. rear_lpr_left (label: 17)
+        > front_wheel_left (label: 8) vs. front_wheel_right (label: 15)
+        > rear_wheel_left (label: 7) vs. rear_wheel_right (label: 16)
+
+    Note:
+        - num_keypoints: K
+
+    Args:
+        joints_3d (np.ndarray([K, 3])): Coordinates of keypoints.
+        joints_3d_visible (np.ndarray([K, 1])): Visibility of keypoints.
+
+    Returns:
+        edited joints_3d_visible
+    """
+    if not strategy == 'vehicle_18points_filter':
+        raise NotImplementedError('Not support for filter strategy: {}'.format(strategy))
+
+    batch_size, num_keypoints, _ = joints_3d.shape
+    assert num_keypoints == 18, 'invalid joints number: {}'.format(joints_3d.shape)
+
+    confusable_pairs = {
+            "plates": {
+                "pairs": [[0, 17], [8, 16]],
+                "former_evidence": [0,  1,  2,  6,  7,  8],
+                "latter_evidence": [12, 13, 14, 15, 17, 16]
+                # "former_evidence": [0, 1, 2, 3,  7,  8,  9,  10, 11, 15],     # front-part
+                # "latter_evidence": [4, 5, 6, 12, 13, 14, 16, 17]              # rear-part
+            },
+            "wheels": {
+                "pairs": [[7, 14], [6, 15]],
+                "former_evidence": [0,  1,  2,  6,  7],
+                "latter_evidence": [12, 13, 14, 15, 16]
+                # "former_evidence": [0,  1,  2,  3,  4,  5,  6,  7],     # left-part
+                # "latter_evidence": [8,  9,  10, 11, 12, 13, 14, 15]     # right-part
+            }
+        }
+
+    filtered_joints_3d_visible = joints_3d_visible.copy()
+
+    for b_ix in range(batch_size):
+        pred_points = joints_3d[b_ix]
+        for k, item in confusable_pairs.items():
+            # Each pair in `pairs`, must get the same choice answer
+            # for example: both pick the former one, i.e.: 1 and 9
+            former_conf = 0
+            latter_conf = 0
+            for pair in item['pairs']:
+                former_point = pred_points[pair[0]]
+                latter_point = pred_points[pair[1]]
+                if abs(former_point[0] - latter_point[0]) <= pixel_thr and \
+                    abs(former_point[1] - latter_point[1]) <= pixel_thr:
+                    # overlap
+                    for kp_idx in item['former_evidence']:
+                        former_conf += filtered_joints_3d_visible[b_ix][kp_idx][0]
+                    for kp_idx in item['latter_evidence']:
+                        latter_conf += filtered_joints_3d_visible[b_ix][kp_idx][0]
+            
+            if former_conf > latter_conf:
+                _un_pick = 1
+            elif former_conf < latter_conf:
+                _un_pick = 0
+            else:
+                continue
+            for pair in item['pairs']:
+                # tmp = filtered_joints_3d_visible[b_ix][pair[_un_pick]][0]
+                filtered_joints_3d_visible[b_ix][pair[_un_pick]][0] = 0.
+                # print('reset {} to 0'.format(tmp))
+
+    return filtered_joints_3d_visible

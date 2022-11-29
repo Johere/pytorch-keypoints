@@ -68,6 +68,11 @@ class DatasetInfo:
         self.upper_body_ids = []
         self.lower_body_ids = []
 
+        # for vehicle keypoints
+        self.front_vehicle_ids = []
+        self.mid_vehicle_ids = []
+        self.rear_vehicle_ids = []
+
         self.flip_index_name = []
         self.flip_pairs_name = []
 
@@ -84,6 +89,12 @@ class DatasetInfo:
                 self.upper_body_ids.append(kid)
             elif type == 'lower':
                 self.lower_body_ids.append(kid)
+            elif type == 'vehicle-front':
+                self.front_vehicle_ids.append(kid)
+            elif type == 'vehicle-mid':
+                self.mid_vehicle_ids.append(kid)
+            elif type == 'vehicle-rear':
+                self.rear_vehicle_ids.append(kid)
             else:
                 pass
 

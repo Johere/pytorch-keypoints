@@ -1,8 +1,22 @@
 _base_ = [
-    '../../../../_base_/default_runtime.py',
-    '../../../../_base_/datasets/coco.py'
+    '../../../_base_/default_runtime.py',
+    '../../../_base_/datasets/vehicle_18kpt.py'
 ]
-evaluation = dict(interval=10, metric='mAP', save_best='AP', rle_score=True)
+
+# ==================================================
+#       to replace _base_/default_runtime.py
+# ==================================================
+checkpoint_config = dict(interval=10, max_keep_ckpts=3)  # save last three checkpoints
+log_config = dict(
+    interval=5,
+    hooks=[
+        dict(type='TextLoggerHook'),
+        dict(type='TensorboardLoggerHook')
+    ])
+load_from = None
+resume_from = None
+
+evaluation = dict(interval=10, metric='mAP', save_best='AP')
 
 optimizer = dict(
     type='Adam',
@@ -18,13 +32,13 @@ lr_config = dict(
     step=[170, 200])
 total_epochs = 210
 channel_cfg = dict(
-    num_output_channels=17,
-    dataset_joints=17,
+    num_output_channels=18,
+    dataset_joints=18,
     dataset_channel=[
-        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
     ],
     inference_channel=[
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17
     ])
 
 # model settings
@@ -47,8 +61,8 @@ model = dict(
     test_cfg=dict(flip_test=True, regression_flip_shift=True))
 
 data_cfg = dict(
-    image_size=[192, 256],      # height, width
-    heatmap_size=[48, 64],
+    image_size=[384, 288],      # width, height
+    heatmap_size=[96, 72],      # width, height
     num_output_channels=channel_cfg['num_output_channels'],
     num_joints=channel_cfg['dataset_joints'],
     dataset_channel=channel_cfg['dataset_channel'],
@@ -57,10 +71,9 @@ data_cfg = dict(
     nms_thr=1.0,
     oks_thr=0.9,
     vis_thr=0.2,
-    use_gt_bbox=False,
+    use_gt_bbox=True,
     det_bbox_thr=0.0,
-    bbox_file='data/coco/person_detection_results/'
-    'COCO_val2017_detections_AP_H_56_person.json',
+    bbox_file='',
 )
 
 train_pipeline = [
@@ -68,17 +81,17 @@ train_pipeline = [
     dict(type='TopDownGetBboxCenterScale', padding=1.25),
     dict(type='TopDownRandomShiftBboxCenter', shift_factor=0.16, prob=0.3),
     dict(type='TopDownRandomFlip', flip_prob=0.5),
-    dict(
-        type='TopDownHalfBodyTransform',
-        num_joints_half_body=8,
-        prob_half_body=0.3),
+    # dict(
+    #     type='TopDownHalfBodyTransform',
+    #     num_joints_half_body=8,
+    #     prob_half_body=0.3),
     dict(
         type='TopDownGetRandomScaleRotation', rot_factor=40, scale_factor=0.5),
     dict(type='TopDownAffine'),
     dict(type='ToTensor'),
     dict(
         type='NormalizeTensor',
-        mean=[0.485, 0.456, 0.406],
+        mean=[0.485, 0.456, 0.406], # rgb
         std=[0.229, 0.224, 0.225]),
     dict(type='TopDownGenerateTargetRegression'),
     dict(
@@ -108,33 +121,49 @@ val_pipeline = [
         ]),
 ]
 
-test_pipeline = val_pipeline
+test_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(type='TopDownGetBboxCenterScale', padding=1.25),
+    dict(type='TopDownAffine'),
+    dict(type='ToTensor'),
+    dict(
+        type='NormalizeTensor',
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]),
+    dict(
+        type='Collect',
+        keys=['img'],
+        meta_keys=[
+            'image_file', 'center', 'scale'
+        ]),
+]
 
-data_root = 'data/coco'
+data_root = '/mnt/disk1/data_for_linjiaojiao/datasets'
 data = dict(
     samples_per_gpu=64,
     workers_per_gpu=2,
     val_dataloader=dict(samples_per_gpu=32),
     test_dataloader=dict(samples_per_gpu=32),
     train=dict(
-        type='TopDownCocoDataset',
-        ann_file=f'{data_root}/annotations/person_keypoints_train2017.json',
-        img_prefix=f'{data_root}/train2017/',
+        type='TopDownVehicleDataset',
+        ann_file=f'{data_root}/BoxCars21k_crop/annotations/vehicle_keypoints_18points_train.json',
+        img_prefix=f'{data_root}/BoxCars21k_crop/images/',
         data_cfg=data_cfg,
         pipeline=train_pipeline,
         dataset_info={{_base_.dataset_info}}),
     val=dict(
-        type='TopDownCocoDataset',
-        ann_file=f'{data_root}/annotations/person_keypoints_val2017.json',
-        img_prefix=f'{data_root}/val2017/',
+        type='TopDownVehicleDataset',
+        ann_file=f'{data_root}/BoxCars21k_crop/annotations/vehicle_keypoints_18points_val.json',
+        img_prefix=f'{data_root}/BoxCars21k_crop/images/',
         data_cfg=data_cfg,
         pipeline=val_pipeline,
         dataset_info={{_base_.dataset_info}}),
     test=dict(
-        type='TopDownCocoDataset',
-        ann_file=f'{data_root}/annotations/person_keypoints_val2017.json',
-        img_prefix=f'{data_root}/val2017/',
+        type='TopDownSimpleImageDataset',
+        ann_file=f'{data_root}/BoxCars21k_crop/annotations/images_with_shape.list',
+        img_prefix=f'{data_root}/BoxCars21k_crop/images/',
         data_cfg=data_cfg,
         pipeline=test_pipeline,
-        dataset_info={{_base_.dataset_info}}),
+        dataset_info={{_base_.dataset_info}},
+        test_mode=True),
 )

@@ -28,16 +28,35 @@ PIPELINES = Registry('pipeline')
 
 
 def _concat_dataset(cfg, default_args=None):
-    types = cfg['type']
     ann_files = cfg['ann_file']
+    num_dset = len(ann_files)
+
+    types = cfg['type']
+    if not isinstance(types, (list, tuple)):
+        types = [types for _ in range(num_dset)]
+    assert len(types) == num_dset, 'dataset types cnt must equals to {}, while got: {}'.format(num_dset, types)
+
     img_prefixes = cfg.get('img_prefix', None)
+    if not isinstance(img_prefixes, (list, tuple)):
+        img_prefixes = [img_prefixes for _ in range(num_dset)]
+    assert len(img_prefixes) == num_dset, 'img_prefixes cnt must equals to {}, while got: {}'.format(num_dset, img_prefixes)
+
     dataset_infos = cfg.get('dataset_info', None)
+    if not isinstance(dataset_infos, (list, tuple)):
+        dataset_infos = [dataset_infos for _ in range(num_dset)]
+    assert len(dataset_infos) == num_dset, 'dataset_infos cnt must equals to {}, while got: {}'.format(num_dset, img_prefixes)
 
     num_joints = cfg['data_cfg'].get('num_joints', None)
+    if not isinstance(num_joints, (list, tuple)):
+        num_joints = [num_joints for _ in range(num_dset)]
+    assert len(num_joints) == num_dset, 'num_joints cnt must equals to {}, while got: {}'.format(num_dset, num_joints)
+
     dataset_channel = cfg['data_cfg'].get('dataset_channel', None)
+    if len(dataset_channel) == 1:
+        dataset_channel = [dataset_channel for _ in range(num_dset)]
+    assert len(dataset_channel) == num_dset, 'dataset_channel cnt must equals to {}, while got: {}'.format(num_dset, dataset_channel)
 
     datasets = []
-    num_dset = len(ann_files)
     for i in range(num_dset):
         cfg_copy = copy.deepcopy(cfg)
         cfg_copy['ann_file'] = ann_files[i]

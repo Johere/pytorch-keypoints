@@ -144,6 +144,165 @@ class TopDownRandomFlip:
 
 
 @PIPELINES.register_module()
+class TopDownRandomBlur:
+    """Data augmentation with random image motion-blur or gaussian-blur.
+
+    Required key: 'img'
+
+    Modifies key: 'img'
+
+    Args:
+        prob (float): Probability of blur.
+        ignore (str): ignore key in image_path to
+    """
+
+    def __init__(self, max_degree=20, angle=20, sigma=[3, 5, 7, 9, 11], prob=0.3, ignore=None):
+        self.max_degree = max_degree
+        self.angle = angle
+        self.sigma = sigma
+        self.prob = prob
+        self.ignore = ignore
+
+    @staticmethod
+    def motion_blur_transform(img, degree=10, angle=20):
+        image = img.copy()
+        # The matrix of the motion blur kernel at any angle is generated. 
+        # The larger the degree, the higher the degree of blur
+        M = cv2.getRotationMatrix2D((degree / 2, degree / 2), angle, 1)
+        motion_blur_kernel = np.diag(np.ones(degree))
+        motion_blur_kernel = cv2.warpAffine(motion_blur_kernel, M, (degree, degree))
+    
+        motion_blur_kernel = motion_blur_kernel / degree
+        blurred = cv2.filter2D(image, -1, motion_blur_kernel)
+        # convert to uint8
+        cv2.normalize(blurred, blurred, 0, 255, cv2.NORM_MINMAX)
+        blurred = np.array(blurred, dtype=np.uint8)
+        return blurred
+
+    @staticmethod
+    def gaussian_blur_transform(img, sigma=9):
+        image = img.copy()
+
+        blurred = cv2.GaussianBlur(image, (sigma, sigma), 0)
+        # convert to uint8
+        cv2.normalize(blurred, blurred, 0, 255, cv2.NORM_MINMAX)
+        blurred = np.array(blurred, dtype=np.uint8)
+
+        return blurred
+
+    def __call__(self, results):
+        """Perform data augmentation with random image flip."""
+        
+        # `ignore`
+        # some images are blurry enough (such as: UA-Detrac), no need blurring augmentation
+        img_path = results['image_file']
+        if self.ignore in img_path:
+            return results
+
+        img = results['img']
+
+        if np.random.rand() <= self.prob:
+            if np.random.rand() < 0.5:
+                # motion-blur
+                degree = np.random.randint(1, self.max_degree)
+                if not isinstance(img, list):
+                    img = self.motion_blur_transform(img, degree, self.angle)
+                else:
+                    img = [self.motion_blur_transform(i, degree, self.angle) for i in img]
+            else:
+                # gaussian-blur
+                sigma = np.random.choice(self.sigma, size=1)[0]
+                if not isinstance(img, list):
+                    img = self.gaussian_blur_transform(img, sigma)
+                else:
+                    img = [self.gaussian_blur_transform(i, sigma) for i in img]
+
+        results['img'] = img
+
+        return results
+
+
+@PIPELINES.register_module()
+class TopDownRandomMotionBlur(TopDownRandomBlur):
+    """Data augmentation with random image motion blur.
+
+    Required key: 'img'
+
+    Modifies key: 'img'
+
+    Args:
+        prob (float): Probability of motion blur.
+    """
+
+    def __init__(self, max_degree=20, angle=20, prob=0.3, ignore=None, **kwargs):
+        self.max_degree = max_degree
+        self.angle = angle
+        self.prob = prob
+        self.ignore = ignore
+
+    def __call__(self, results):
+        """Perform data augmentation with random image flip."""
+
+        # `ignore`
+        # some images are blurry enough (such as: UA-Detrac), no need blurring augmentation
+        img_path = results['image_file']
+        if self.ignore in img_path:
+            return results
+
+        img = results['img']
+
+        if np.random.rand() <= self.prob:
+            degree = np.random.randint(1, self.max_degree)
+            if not isinstance(img, list):
+                img = self.motion_blur_transform(img, degree, self.angle)
+            else:
+                img = [self.motion_blur_transform(i, degree, self.angle) for i in img]
+
+        results['img'] = img
+
+        return results
+
+
+@PIPELINES.register_module()
+class TopDownRandomGaussianBlur(TopDownRandomBlur):
+    """Data augmentation with random image gaussian blur.
+
+    Required key: 'img'
+
+    Modifies key: 'img'
+
+    Args:
+        prob (float): Probability of gaussian blur.
+    """
+
+    def __init__(self, sigma=[3, 5, 7, 9, 11], prob=0.5, ignore=None, **kwargs):
+        self.sigma = sigma
+        self.prob = prob
+        self.ignore = ignore
+
+    def __call__(self, results):
+        """Perform data augmentation with random image flip."""
+
+        # `ignore`
+        # some images are blurry enough (such as: UA-Detrac), no need blurring augmentation
+        img_path = results['image_file']
+        if self.ignore in img_path:
+            return results
+        img = results['img']
+
+        if np.random.rand() <= self.prob:
+            sigma = np.random.choice(self.sigma, size=1)[0]
+            if not isinstance(img, list):
+                img = self.gaussian_blur_transform(img, sigma)
+            else:
+                img = [self.gaussian_blur_transform(i, sigma) for i in img]
+
+        results['img'] = img
+
+        return results
+
+
+@PIPELINES.register_module()
 class TopDownHalfBodyTransform:
     """Data augmentation with half-body transform. Keep only the upper body or
     the lower body at random.
@@ -220,6 +379,91 @@ class TopDownHalfBodyTransform:
             if c_half_body is not None and s_half_body is not None:
                 results['center'] = c_half_body
                 results['scale'] = s_half_body
+
+        return results
+
+
+@PIPELINES.register_module()
+class TopDownCropVehicleTransform:
+    """Data augmentation with crop transform. Keep only part of the vehicle at random.
+
+    Required key: 'joints_3d', 'joints_3d_visible', and 'ann_info'.
+
+    Modifies key: 'scale' and 'center'.
+
+    Args:
+        min_num_joints (int): minimum val for keeping joints. If the vehicle has fewer number
+            of joints (< num_joints_half_body), ignore this step.
+        prob (float): Probability of crop transform.
+    """
+
+    def __init__(self, min_num_joints=4, prob=0.3):
+        self.min_num_joints = min_num_joints
+        self.prob = prob
+
+    @staticmethod
+    def crop_vehicle_transform(cfg, joints_3d, joints_3d_visible):
+        """Get center&scale for crop vehicle transform."""
+        front_joints = []
+        mid_joints = []
+        rear_joints = []
+        for joint_id in range(cfg['num_joints']):
+            if joints_3d_visible[joint_id][0] > 0:
+                if joint_id in cfg['front_vehicle_ids']:
+                    front_joints.append(joints_3d[joint_id])
+                elif joint_id in cfg['rear_vehicle_ids']:
+                    rear_joints.append(joints_3d[joint_id])
+                else:
+                    mid_joints.append(joints_3d[joint_id])
+
+        if np.random.randn() < 0.2 and len(front_joints) > 2:
+            selected_joints = front_joints
+        elif np.random.randn() < 0.4 and len(rear_joints) > 2:
+            selected_joints = rear_joints
+        else:
+            if np.random.randn() < 0.5:
+                selected_joints = front_joints + mid_joints
+            else:
+                selected_joints = rear_joints + mid_joints
+
+        if len(selected_joints) < 2:
+            return None, None
+
+        selected_joints = np.array(selected_joints, dtype=np.float32)
+        center = selected_joints.mean(axis=0)[:2]
+
+        left_top = np.amin(selected_joints, axis=0)
+
+        right_bottom = np.amax(selected_joints, axis=0)
+
+        w = right_bottom[0] - left_top[0]
+        h = right_bottom[1] - left_top[1]
+
+        aspect_ratio = cfg['image_size'][0] / cfg['image_size'][1]
+
+        if w > aspect_ratio * h:
+            h = w * 1.0 / aspect_ratio
+        elif w < aspect_ratio * h:
+            w = h * aspect_ratio
+
+        scale = np.array([w / 200.0, h / 200.0], dtype=np.float32)
+        scale = scale * 1.5
+        return center, scale
+
+    def __call__(self, results):
+        """Perform data augmentation with crop transform."""
+        joints_3d = results['joints_3d']
+        joints_3d_visible = results['joints_3d_visible']
+
+        if (np.sum(joints_3d_visible[:, 0]) > self.min_num_joints
+                and np.random.rand() < self.prob):
+
+            new_center, new_scale = self.crop_vehicle_transform(
+                results['ann_info'], joints_3d, joints_3d_visible)
+
+            if new_center is not None and new_scale is not None:
+                results['center'] = new_center
+                results['scale'] = new_scale
 
         return results
 

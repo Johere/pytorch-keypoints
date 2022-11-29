@@ -70,6 +70,7 @@ class Kpt2dSviewRgbImgTopDownDataset(Dataset, metaclass=ABCMeta):
                 'for details.')
 
         dataset_info = DatasetInfo(dataset_info)
+        self.parsed_dataset_info = dataset_info
 
         assert self.ann_info['num_joints'] == dataset_info.keypoint_num
         self.ann_info['flip_pairs'] = dataset_info.flip_pairs

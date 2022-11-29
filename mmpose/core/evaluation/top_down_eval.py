@@ -4,7 +4,7 @@ import warnings
 import cv2
 import numpy as np
 
-from mmpose.core.post_processing import transform_preds
+from mmpose.core.post_processing import transform_preds, vehicle_points_filter
 
 
 def _calc_distances(preds, targets, mask, normalize):
@@ -476,6 +476,7 @@ def keypoints_from_heatmaps(heatmaps,
                             scale,
                             unbiased=False,
                             post_process='default',
+                            filter_strategy=None,
                             kernel=11,
                             valid_radius_factor=0.0546875,
                             use_udp=False,
@@ -497,6 +498,8 @@ def keypoints_from_heatmaps(heatmaps,
         post_process (str/None): Choice of methods to post-process
             heatmaps. Currently supported: None, 'default', 'unbiased',
             'megvii'.
+        filter_strategy (str/None): Choice of methods to filter keypoints based on structure. 
+            Currently supported: None, 'vehicle_points_filter'.
         unbiased (bool): Option to use unbiased decoding. Mutually
             exclusive with megvii.
             Note: this arg is deprecated and unbiased=True can be replaced
@@ -618,6 +621,9 @@ def keypoints_from_heatmaps(heatmaps,
 
     if post_process == 'megvii':
         maxvals = maxvals / 255.0 + 0.5
+    
+    if filter_strategy is not None:
+        maxvals = vehicle_points_filter(filter_strategy, preds, maxvals)
 
     return preds, maxvals
 

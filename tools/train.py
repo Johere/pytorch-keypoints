@@ -143,6 +143,8 @@ def main():
 
     # create work_dir
     mmcv.mkdir_or_exist(osp.abspath(cfg.work_dir))
+    # dump config
+    cfg.dump(osp.join(cfg.work_dir, osp.basename(args.config)))
     # init the logger before other steps
     timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
     log_file = osp.join(cfg.work_dir, f'{timestamp}.log')
@@ -173,6 +175,8 @@ def main():
     meta['seed'] = seed
 
     model = build_posenet(cfg.model)
+    logger.info(model)
+    
     datasets = [build_dataset(cfg.data.train)]
 
     if len(cfg.workflow) == 2:

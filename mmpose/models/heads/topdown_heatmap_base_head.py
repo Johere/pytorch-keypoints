@@ -78,6 +78,7 @@ class TopdownHeatmapBaseHead(nn.Module):
             s,
             unbiased=self.test_cfg.get('unbiased_decoding', False),
             post_process=self.test_cfg.get('post_process', 'default'),
+            filter_strategy=self.test_cfg.get('filter_strategy', None),
             kernel=self.test_cfg.get('modulate_kernel', 11),
             valid_radius_factor=self.test_cfg.get('valid_radius_factor',
                                                   0.0546875),
